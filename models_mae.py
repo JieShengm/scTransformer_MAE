@@ -366,6 +366,28 @@ class MaskedAutoencoderViT(nn.Module):
 
         return x
 
+    def get_last_selfattention(self, x):
+        expr = x[0].unsqueeze(-1)
+        expression_emb = self.expression_embedding(expr)
+
+        # add pos embed w/o cls token
+        gene_idx = x[1]
+        x = expression_emb + self.gene_index_embed(gene_idx)  # self.pos_embed[:, :1, :]
+
+        # append cls token
+        index_tensor = torch.LongTensor([self.num_genes]).to(expr.device)
+        cls_token = self.cls_token + self.gene_index_embed(index_tensor)
+        cls_tokens = cls_token.expand(x.shape[0], -1, -1)
+        x = torch.cat((x, cls_tokens), dim=1)
+        
+        # apply Transformer blocks
+        for i, blk in enumerate(self.blocks):
+            if i < len(self.blocks) - 1:
+                x = blk(x)
+            else:
+                # return attention of the last block
+                return blk(x, return_attention=True)    
+    
     def forward_loss(self, x, pred, mask):
         x = torch.nan_to_num(x)
         pred = torch.squeeze(pred)
